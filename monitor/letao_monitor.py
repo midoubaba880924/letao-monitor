@@ -29,12 +29,34 @@ ctx.verify_mode = ssl.CERT_NONE
 
 ITEM_RE = re.compile(r'href="/goods_detail/([A-Za-z0-9-]+)/([A-Za-z0-9]+)"')
 
-def fetch(url):
-    req = urllib.request.Request(url, headers={
+def fetch(url, retries=2):
+    """带完整浏览器头 + 失败退避重试（10s/20s），应对瞬时风控拦截"""
+    headers = {
         "Cookie": f"Authori-zation={COOKIE_TOKEN}; lang=chs",
-        "User-Agent": UA, "Accept-Language": "zh-CN,zh;q=0.9"})
-    with urllib.request.urlopen(req, timeout=20, context=ctx) as r:
-        return r.read().decode("utf-8", "ignore")
+        "User-Agent": UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,ja;q=0.8",
+        "Referer": f"{BASE}/",
+        "Origin": BASE,
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+        "Connection": "keep-alive",
+    }
+    delays = [0, 10, 20]
+    last_err = None
+    for attempt in range(retries + 1):
+        if delays[attempt]:
+            time.sleep(delays[attempt])
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=20, context=ctx) as r:
+                return r.read().decode("utf-8", "ignore")
+        except Exception as e:
+            last_err = e
+    raise last_err
 
 def _extract(url):
     html = fetch(url)
@@ -118,9 +140,24 @@ def main():
             except Exception as e:
                 report.append(f"[ERR] {p}: {e}"); continue
             if ids is None or len(ids) == 0:
-                # 风控页/异常页：绝不清空状态
-                report.append(f"[SUSPECT] {p}: 返回异常(空/验证码)，保持原状态不推送")
+                # 风控页/异常页：绝不清空状态；连续被拦则发钉钉告警（6h节流）
+                state["suspect_streak"] = state.get("suspect_streak", 0) + 1
+                report.append(f"[SUSPECT] {p}: 返回异常(空/验证码)，保持原状态不推送（连续第{state['suspect_streak']}轮）")
+                if state["suspect_streak"] >= 2 and now_ts - float(state.get("last_risk_warn", 0)) > 6 * 3600:
+                    try:
+                        warn = {"msgtype": "markdown", "markdown": {
+                            "title": "cotopaxi监控告警",
+                            "text": f"## ⚠️ cotopaxi 监控被风控拦截\n\n连续 {state['suspect_streak']} 轮抓取被乐淘验证码拦截，期间上新可能漏报。\n\n系统每5分钟自动重试，恢复后自动继续。"}}
+                        req = urllib.request.Request(os.environ.get("DING_WEBHOOK", ""),
+                                                     data=json.dumps(warn).encode(),
+                                                     headers={"Content-Type": "application/json"})
+                        urllib.request.urlopen(req, timeout=15)
+                        state["last_risk_warn"] = now_ts
+                        report.append("[WARN] 已发送风控告警到钉钉")
+                    except Exception as e:
+                        report.append(f"[WARN] 告警发送失败: {str(e)[:50]}")
                 continue
+            state["suspect_streak"] = 0  # 成功一轮即清零
             old = set(plat_state.get(p, []))
             new = [i for i in ids if i not in old and i not in pushed]
             if not baseline and len(new) > ANOMALY_NEW_LIMIT:
