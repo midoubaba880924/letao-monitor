@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: letao-monitor
-  cancel-in-progress: true   # 同一时刻只跑一个实例，防止重复推送
+  cancel-in-progress: false   # 撞车时排队串行，不丢轮次不重复推送
 
 jobs:
   monitor:
