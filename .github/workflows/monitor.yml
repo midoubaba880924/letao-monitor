@@ -3,7 +3,12 @@ name: letao-monitor
 on:
   schedule:
     - cron: "*/30 * * * *"   # 每30分钟一轮
-  workflow_dispatch:          # 支持手动触发
+  workflow_dispatch:
+    inputs:
+      test_item:
+        description: "测试商品URL(goods_detail链接)，留空=正常监控"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -20,29 +25,20 @@ jobs:
           python-version: "3.11"
 
       - name: Run monitor
-        id: run
         env:
           LETAO_TOKEN: ${{ secrets.LETAO_TOKEN }}
           STATE_DIR: ${{ github.workspace }}/monitor
-        run: |
-          output=$(python monitor/letao_monitor.py)
-          echo "$output"
-          {
-            echo "output<<__EOF__"
-            echo "$output"
-            echo "__EOF__"
-          } >> "$GITHUB_OUTPUT"
+          TEST_ITEM: ${{ github.event.inputs.test_item }}
+        run: python monitor/letao_monitor.py
 
       - name: Send notification
         env:
-          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
           WXPUSHER_TOKEN: ${{ secrets.WXPUSHER_TOKEN }}
           WXPUSHER_UIDS: ${{ secrets.WXPUSHER_UIDS }}
           BARK_URL: ${{ secrets.BARK_URL }}
           WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
           DING_WEBHOOK: ${{ secrets.DING_WEBHOOK }}
-          EMAIL_SMTP: ${{ secrets.EMAIL_SMTP }}
-        run: python monitor/notify.py monitor/alerts.log
+        run: python monitor/notify.py monitor/alerts.json
 
       - name: Commit state
         run: |
