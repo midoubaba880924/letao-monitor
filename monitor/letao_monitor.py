@@ -115,10 +115,14 @@ def main():
 
     if new_ids and not baseline or test_item:
         items = []
-        for p, i in new_ids[:5]:  # 每轮最多推5条，防刷屏
+        for p, i in new_ids[:30]:  # 上限30条/轮防极端刷屏；notify 分批全量推送不漏
             info = enrich(p, i)
             items.append(info)
             print(f"  + [{p}] {info['title'][:40]} | {info['price']}日元 约¥{info['cny']}")
+        if len(new_ids) > 30:  # 超出部分记录链接到日志兜底
+            with open(ALERT_LOG, "a", encoding="utf-8") as f:
+                for p, i in new_ids[30:]:
+                    f.write(f"{stamp} 超量 [{p}] {BASE}/goods_detail/{p}/{i}\n")
         payload = {"time": stamp, "items": items}
         with open(ALERT_JSON, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=1)
