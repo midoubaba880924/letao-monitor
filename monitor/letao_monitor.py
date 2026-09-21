@@ -15,7 +15,7 @@ import json, re, os, sys, time, urllib.request, ssl
 
 COOKIE_TOKEN = os.environ.get("LETAO_TOKEN", "")
 KEYWORD = os.environ.get("MONITOR_KEYWORD", "cotopaxi")
-PLATFORMS = ["mercari", "YAHOO-AUCTIONS", "SURUGA", "PAYPAY", "ANIMATE", "lashinbang"]
+PLATFORMS = ["mercari"]
 STATE_DIR = os.environ.get("STATE_DIR", os.path.dirname(os.path.abspath(__file__)))
 STATE_FILE = os.path.join(STATE_DIR, "seen_items.json")
 ALERT_LOG = os.path.join(STATE_DIR, "alerts.log")
