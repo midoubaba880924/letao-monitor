@@ -36,6 +36,8 @@ jobs:
       - name: Send notification
         env:
           SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          WXPUSHER_TOKEN: ${{ secrets.WXPUSHER_TOKEN }}
+          WXPUSHER_UIDS: ${{ secrets.WXPUSHER_UIDS }}
           BARK_URL: ${{ secrets.BARK_URL }}
           WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
           DING_WEBHOOK: ${{ secrets.DING_WEBHOOK }}
