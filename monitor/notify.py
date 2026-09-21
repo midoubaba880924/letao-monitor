@@ -55,14 +55,19 @@ if __name__ == "__main__":
     items = data.get("items", [])
     if not items:
         print("no items"); sys.exit(0)
-    summary = f"cotopaxi上新 {len(items)}条" + (f" | {items[0]['price']}日元起" if items[0].get("price") else "")
-    alert_text = data.get("time", "") + "\n" + "\n".join(
-        f"[{it['platform']}] {it.get('title','')[:40]} {it.get('price','')}日元\n{it['pc']}" for it in items)
     sent = False
     if os.environ.get("WXPUSHER_TOKEN"):
         try:
-            send_wxpusher_html(build_html(items), summary)
+            n = len(items)
+            # 全量分批：每5条一条消息，确保一条不漏
+            for i in range(0, n, 5):
+                chunk = items[i:i + 5]
+                head = f"cotopaxi上新 {i + 1}-{i + len(chunk)}/{n}条"
+                if chunk[0].get("price"):
+                    head += f" | {chunk[0]['price']}日元起"
+                send_wxpusher_html(build_html(chunk), head)
             sent = True
+            print(f"pushed {n} items in {(n + 4) // 5} message(s)")
         except Exception as e:
             print("wxpusher failed:", e)
     if not sent:
