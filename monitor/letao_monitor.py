@@ -12,6 +12,9 @@
   TEST_ITEM  可选，goods_detail 完整URL，用于手动测试推送
 """
 import json, re, os, sys, time, urllib.request, ssl
+from datetime import datetime, timezone, timedelta
+
+TZ_BEIJING = timezone(timedelta(hours=8))  # 服务器是UTC，固定换算北京时间
 
 COOKIE_TOKEN = os.environ.get("LETAO_TOKEN", "")
 KEYWORD = os.environ.get("MONITOR_KEYWORD", "cotopaxi")
@@ -116,7 +119,7 @@ def main():
             auth_fail = True
 
     save_state(state)
-    stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    stamp = datetime.now(TZ_BEIJING).strftime("%Y-%m-%d %H:%M:%S")  # 北京时间
     print(f"=== letao monitor {stamp} baseline={baseline} ===")
     print("\n".join(report))
 
