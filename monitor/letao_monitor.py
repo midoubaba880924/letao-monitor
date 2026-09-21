@@ -38,7 +38,16 @@ def fetch(url):
         return r.read().decode("utf-8", "ignore")
 
 def parse_search(platform):
-    html = fetch(f"{BASE}/good_cate/{platform}/{KEYWORD}")
+    base = f"{BASE}/good_cate/{platform}/{KEYWORD}"
+    # sort=created_time: 强制按最新上架排序（实测默认已是最新序，此参数免疫默认排序变更）
+    ids = _extract(base + "?sort=created_time")
+    # 防分页漏单：接近单页上限时补抓第2页
+    if len(ids) >= 100:
+        ids += _extract(base + "?sort=created_time&page=2")
+    return ids
+
+def _extract(url):
+    html = fetch(url)
     seen, out = set(), []
     for plat, iid in ITEM_RE.findall(html):
         if iid not in seen:
