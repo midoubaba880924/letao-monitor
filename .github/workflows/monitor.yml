@@ -2,7 +2,7 @@ name: letao-monitor
 
 on:
   schedule:
-    - cron: "*/30 * * * *"   # 每30分钟一轮
+    - cron: "*/5 * * * *"    # 每5分钟一轮（公开仓库免费不限量）
   workflow_dispatch:
     inputs:
       test_item:
