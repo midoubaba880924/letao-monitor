@@ -13,6 +13,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: letao-monitor
+  cancel-in-progress: true   # 同一时刻只跑一个实例，防止重复推送
+
 jobs:
   monitor:
     runs-on: ubuntu-latest
