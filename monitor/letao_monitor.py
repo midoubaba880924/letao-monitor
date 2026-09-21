@@ -34,7 +34,7 @@ def fetch(url):
     req = urllib.request.Request(url, headers={
         "Cookie": f"Authori-zation={COOKIE_TOKEN}; lang=chs",
         "User-Agent": UA, "Accept-Language": "zh-CN,zh;q=0.9"})
-    with urllib.request.urlopen(req, timeout=40, context=ctx) as r:
+    with urllib.request.urlopen(req, timeout=20, context=ctx) as r:
         return r.read().decode("utf-8", "ignore")
 
 def parse_search(platform):
