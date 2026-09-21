@@ -1,0 +1,51 @@
+name: letao-monitor
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # 每30分钟一轮
+  workflow_dispatch:          # 支持手动触发
+
+permissions:
+  contents: write
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run monitor
+        id: run
+        env:
+          LETAO_TOKEN: ${{ secrets.LETAO_TOKEN }}
+          STATE_DIR: ${{ github.workspace }}/monitor
+        run: |
+          output=$(python monitor/letao_monitor.py)
+          echo "$output"
+          {
+            echo "output<<__EOF__"
+            echo "$output"
+            echo "__EOF__"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Send notification
+        env:
+          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          BARK_URL: ${{ secrets.BARK_URL }}
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
+          DING_WEBHOOK: ${{ secrets.DING_WEBHOOK }}
+          EMAIL_SMTP: ${{ secrets.EMAIL_SMTP }}
+        run: python monitor/notify.py monitor/alerts.log
+
+      - name: Commit state
+        run: |
+          git config user.name "monitor-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add monitor/seen_items.json monitor/alerts.log || true
+          git diff --cached --quiet || git commit -m "chore: update monitor state [skip ci]"
+          git push
