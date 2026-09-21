@@ -26,6 +26,22 @@ def send_serverchan(alert, cfg):
     req = urllib.request.Request(f"https://sctapi.ftqq.com/{cfg}.send", data=data)
     urllib.request.urlopen(req, timeout=15)
 
+def send_wxpusher(alert, cfg):
+    # cfg = WxPusher appToken
+    lines = alert.split("\n")
+    summary = lines[0][:20]
+    content = "\n".join(lines[1:]) or summary
+    body = json.dumps({
+        "appToken": cfg,
+        "content": alert,
+        "summary": summary,
+        "contentType": 1,
+        "uids": json.loads(os.environ.get("WXPUSHER_UIDS", "[]")),
+    }).encode()
+    req = urllib.request.Request("https://wxpusher.zjiecode.com/api/send/message",
+                                 data=body, headers={"Content-Type": "application/json"})
+    urllib.request.urlopen(req, timeout=15)
+
 def send_email(alert, cfg):
     host, port, user, pwd, to = cfg.split("|")
     msg = MIMEText(alert, "plain", "utf-8")
@@ -38,6 +54,7 @@ def send_email(alert, cfg):
 
 CHANNELS = [
     ("SERVERCHAN_KEY", send_serverchan),
+    ("WXPUSHER_TOKEN", send_wxpusher),
     ("BARK_URL", send_bark),
     ("WECOM_WEBHOOK", send_wecom),
     ("DING_WEBHOOK", send_dingtalk),
