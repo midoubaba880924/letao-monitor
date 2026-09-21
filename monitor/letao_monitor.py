@@ -22,6 +22,10 @@ BASE = "https://letaoyifan.com"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0"
 PUSH_DEDUP_HOURS = 24   # 同一商品24小时内不重复推送
 ANOMALY_NEW_LIMIT = 15  # 单轮新增超过此数 → 判定状态异常，不推送
+# 只推包类（用户要求：衣服裤子不推）。命中任一关键词才推送
+BAG_KEYWORDS = ["バックパック", "リュック", "バッグ", "かばん", "カバン", "鞄",
+                "ボディバッグ", "ウエストポーチ", "ウェストバッグ", "ポーチ",
+                "ショルダー", "トート", "ダッフル", "ハンドバッグ", "ボストン", "ゲートル"]
 
 ctx = ssl.create_default_context()
 ctx.check_hostname = False
@@ -184,6 +188,10 @@ def main():
         items = []
         for p, i in dedup_items[:30]:
             info = enrich(p, i, stamp)
+            # 品类过滤：只推包类，衣服/裤子/鞋帽等不推
+            if not any(k in info["title"] for k in BAG_KEYWORDS):
+                report.append(f"[FILTER] 跳过非包类: {info['title'][:30]}")
+                continue
             items.append(info)
             pushed[f"{p}:{i}"] = now_ts
             print(f"  + [{p}] {info['title'][:40]} | {info['price']}日元 约¥{info['cny']}")
