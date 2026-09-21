@@ -55,21 +55,19 @@ def _extract(url):
     return out
 
 def enrich(platform, iid):
-    """抓详情页提取富信息"""
-    info = {"platform": platform, "id": iid, "title": "", "price": "", "cny": "", "cond": "", "img": ""}
+    """抓详情页并用 Node 精确解析 NUXT 主商品数据（标题/真实价格/图/描述）"""
+    info = {"platform": platform, "id": iid, "title": "", "price": "", "cny": "", "cond": "", "img": "", "content": ""}
     try:
-        h = fetch(f"{BASE}/goods_detail/{platform}/{iid}")
-        t = re.search(r"<title>([^<]+)</title>", h)
-        if t:
-            info["title"] = re.sub(r"\s*-\s*[A-Za-z ]*browserHeadText.*$", "", t.group(1)).strip()
-        m = re.search(r'price:"([\d,]+)"', h)
-        if m: info["price"] = m.group(1)
-        m = re.search(r'convertPrice:"([\d.]+)"', h)
-        if m: info["cny"] = m.group(1)
-        for c in CONDS:
-            if c in h: info["cond"] = c; break
-        m = re.search(r'image:"(https:[^"]+?)"', h)
-        if m: info["img"] = m.group(1).replace("\\u002F", "/")
+        import subprocess
+        js = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nuuxt_extract.js")
+        r = subprocess.run(["node", js, platform, iid], capture_output=True,
+                           text=True, timeout=70, env={**os.environ})
+        d = json.loads(r.stdout.strip().splitlines()[-1])
+        for k in ("title", "price", "cny", "cond", "content"):
+            info[k] = d.get(k, "")
+        info["img"] = d.get("image", "")
+        if d.get("sync_pending"):
+            info["title"] = info["title"] or "（详情同步中，点击链接查看）"
     except Exception as e:
         info["err"] = str(e)[:60]
     info["pc"] = f"{BASE}/goods_detail/{platform}/{iid}"
