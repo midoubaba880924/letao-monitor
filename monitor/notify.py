@@ -36,11 +36,12 @@ def send_wxpusher(items, summary):
     print("wxpusher:", d.get("code"), d.get("msg"))
 
 def send_dingtalk(items, summary):
-    # 钉钉 markdown 消息；机器人关键词需包含 cotopaxi
+    # 钉钉端：只展示商品图片+价格，不放购买链接（购买走微信富卡片）
     text = ""
     for it in items[:5]:
-        price = f'{it["price"]}日元(约¥{it["cny"]})' if it.get("price") else ""
-        text += f"### 🆕 [{it.get('title','')}]({it['h5']})\n\n💰 **{price}** 🛒 {it['platform']}\n\n[手机购买页]({it['h5']}) · [电脑页]({it['pc']})\n\n"
+        price = f'💰 **{it["price"]}日元**（约¥{it["cny"]}）' if it.get("price") else ""
+        img = f"![商品图]({it['img']})\n\n" if it.get("img") else ""
+        text += f"### 🆕 {it.get('title','')}\n\n{img}{price}\n\n🛒 {it['platform']}\n\n---\n\n"
     body = {"msgtype": "markdown",
             "markdown": {"title": "cotopaxi上新", "text": f"## {summary}\n\n" + text}}
     d = post_json(os.environ["DING_WEBHOOK"], body)
