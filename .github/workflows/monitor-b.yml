@@ -42,6 +42,7 @@ jobs:
         run: |
           git config user.name "monitor-bot"
           git config user.email "bot@users.noreply.github.com"
+          git pull --rebase origin main || true
           git add monitor/seen_items.json monitor/alerts.log || true
           git diff --cached --quiet || git commit -m "chore: update monitor state [skip ci]"
-          git push
+          git push || true   # 撞车失败不阻塞，下轮会重写
