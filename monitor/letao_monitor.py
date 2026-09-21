@@ -123,8 +123,9 @@ def main():
     if new_ids and not baseline or test_item:
         items = []
         for p, i in new_ids[:30]:  # 上限30条/轮防极端刷屏；notify 分批全量推送不漏
-            info = enrich(p, i)
-            items.append(info)
+        info = enrich(p, i)
+        info["first_seen"] = stamp  # 监控首次发现时间（距真实上架≤轮询间隔）
+        items.append(info)
             print(f"  + [{p}] {info['title'][:40]} | {info['price']}日元 约¥{info['cny']}")
         if len(new_ids) > 30:  # 超出部分记录链接到日志兜底
             with open(ALERT_LOG, "a", encoding="utf-8") as f:
