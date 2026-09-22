@@ -15,23 +15,21 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: reproduce pull --rebase fork scenario
+      - name: reproduce conflict scenario
         run: |
           git config user.name "diag-bot"
           git config user.email "bot@users.noreply.github.com"
-          echo "diag2 $(date -u +%H:%M:%S)" >> monitor/heartbeat
-          git add monitor/heartbeat
-          git commit -m "diag2: local commit [skip ci]" || echo "commit failed rc=$?"
-          echo "=== before pull: log ==="
-          git log --oneline -2
-          echo "=== status before pull ==="
+          python -c "import json,io; p='monitor/seen_items.json'; d=json.load(open(p,encoding='utf-8')); d['diag_marker']='local-%s' % __import__('time').time(); json.dump(d,open(p,'w',encoding='utf-8'),ensure_ascii=False)"
+          git add monitor/seen_items.json
+          git commit -m "diag3: local commit on seen_items [skip ci]" || echo "commit failed rc=$?"
+          echo "=== status before ==="
           git status --short
-          echo "=== waiting 45s for external trigger commit ==="
+          echo "=== waiting 45s for external conflict commit ==="
           sleep 45
           echo "=== pull --rebase (capture all) ==="
           git pull --rebase origin main
           echo "pull exit=$?"
-          echo "=== status after pull ==="
+          echo "=== status after ==="
           git status --short
-          echo "=== log after pull ==="
+          echo "=== log after ==="
           git log --oneline -4
