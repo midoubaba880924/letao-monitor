@@ -9,6 +9,7 @@
 环境变量: GH_TOKEN（GITHUB_TOKEN 或 PAT，需 actions:write 权限）
         GH_OWNER / GH_REPO（由 workflow 注入）
 """
+import datetime
 import json
 import os
 import sys
@@ -17,6 +18,15 @@ import urllib.request
 
 STALE_MIN = 15
 WORKFLOW_FILE = "monitor.yml"   # 主工作流文件名（长跑接力）
+# 停跑窗口：北京时间 0:30-6:30 = UTC 16:30-22:30（990-1349 分钟），此期间主 run 本就应结束，不补触发
+PAUSE_START_MIN = 16 * 60 + 30
+PAUSE_END_MIN = 22 * 60 + 30
+
+
+def in_pause_window():
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    mins = now_utc.hour * 60 + now_utc.minute
+    return PAUSE_START_MIN <= mins < PAUSE_END_MIN
 
 
 def gh(url, token, method="GET", body=None):
@@ -43,6 +53,9 @@ def main():
     if not (token and owner and repo):
         print("[warn] GH_TOKEN/GH_OWNER/GH_REPO 未配置，跳过")
         return 1
+    if in_pause_window():
+        print("停跑窗口（北京 0:30-6:30），主 run 正常不在线，跳过")
+        return 0
     api = f"https://api.github.com/repos/{owner}/{repo}"
     try:
         # 注意：GitHub 的 workflow 查询参数在此仓库无效（返回全部 runs），
