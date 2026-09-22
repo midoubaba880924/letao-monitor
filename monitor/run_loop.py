@@ -92,15 +92,20 @@ def run_one_round():
         git(["git", "-c", "user.name=monitor-bot", "-c",
              "user.email=bot@users.noreply.github.com", "commit",
              "-m", "chore: update monitor state [skip ci]"])
-        r = git(["git", "pull", "--rebase", "origin", "main"])
+        # pull --rebase 用 -X theirs 自动解 seen_items 冲突（并发 run 同文件冲突 → 以远程为准，
+        # 本地状态下轮重抓；alerts.json 未跟踪不受影响，notify 仍可推送本轮）
+        r = git(["git", "pull", "--rebase", "-X", "theirs", "origin", "main"])
         if r.returncode != 0:
-            log(f"[warn] git pull --rebase 返回 {r.returncode}: {(r.stderr or '')[:100]}")
-            git(["git", "rebase", "--abort"])  # 恢复干净工作区，下轮重试
-            push_ok = False
-        else:
+            git(["git", "rebase", "--abort"])  # 恢复干净工作区
+            r = git(["git", "pull", "--rebase", "-X", "theirs", "origin", "main"])
+            if r.returncode != 0:
+                git(["git", "rebase", "--abort"])
+                log(f"[warn] git pull --rebase 失败: {(r.stderr or '')[:150]}")
+                push_ok = False
+        if push_ok:
             r = git(["git", "push"])
             if r.returncode != 0:
-                log(f"[warn] git push 返回 {r.returncode}: {(r.stderr or '')[:100]}")
+                log(f"[warn] git push 返回 {r.returncode}: {(r.stderr or '')[:150]}")
                 push_ok = False
     except Exception as e:
         log(f"[warn] git 提交异常: {str(e)[:80]}")
