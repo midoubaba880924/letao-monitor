@@ -30,7 +30,7 @@ def build_html(items):
 <p style="margin:8px 0">
 📱 <a href="{it['h5']}">手机购买页</a> ｜ 💻 <a href="{it['pc']}">电脑页</a>
 </p></div>""")
-    footer = '<p style="color:#888;font-size:12px">GitHub 云端监控 · 每2.5分钟检查 Mercari · 仅推送监控启动后新上架/调价商品</p>'
+    footer = '<p style="color:#888;font-size:12px">GitHub 云端监控 · 每2分钟检查 Mercari · 凌晨0:30-6:30停跑 · 仅推送监控启动后新上架/调价商品</p>'
     return "".join(cards) + footer
 
 def post_json(url, body):
