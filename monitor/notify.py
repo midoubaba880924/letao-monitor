@@ -31,10 +31,15 @@ def send_wxpusher(items, summary):
     body = {
         "appToken": os.environ["WXPUSHER_TOKEN"],
         "summary": summary[:20], "contentType": 2,
+        # 富卡片：产品名称+图片+价格+购买链接（h5 为鸿蒙4可打开的手机购买页，pc 为电脑页）
+        "content": build_html(items),
         "uids": json.loads(os.environ.get("WXPUSHER_UIDS", "[]")),
     }
     d = post_json("https://wxpusher.zjiecode.com/api/send/message", body)
     print("wxpusher:", d.get("code"), d.get("msg"))
+    if str(d.get("code")) != "1000":
+        # WxPusher 约定 1000=成功；非1000即未送达，抛异常让上层标记渠道失败，避免静默丢失
+        raise RuntimeError(f"wxpusher rejected: {d.get('code')} {d.get('msg')}")
 
 def send_dingtalk(items, summary):
     # 钉钉端：只展示商品图片+价格，不放购买链接（购买走微信富卡片）
