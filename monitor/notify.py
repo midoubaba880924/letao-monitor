@@ -65,6 +65,41 @@ def send_dingtalk(items, summary):
             "markdown": {"title": "cotopaxi上新", "text": f"## {summary}\n\n" + text}}
     d = post_json(os.environ["DING_WEBHOOK"], body)
     print("dingtalk:", d.get("errcode"), d.get("errmsg"))
+    if str(d.get("errcode")) != "0":
+        # 钉钉失败不再静默：非0即未送达，抛异常让上层标记渠道失败
+        raise RuntimeError(f"dingtalk rejected: {d.get('errcode')} {d.get('errmsg')}")
+
+def send_alert(title, text):
+    """多渠道告警（尽力而为，单渠道失败不抛）：微信富文本 + 钉钉 markdown。
+    供监控脚本/run_loop 在异常时调用；返回成功送达的渠道列表。"""
+    ok = []
+    try:
+        if os.environ.get("WXPUSHER_TOKEN") and os.environ.get("WXPUSHER_UIDS"):
+            body = {
+                "appToken": os.environ["WXPUSHER_TOKEN"],
+                "summary": title[:20], "contentType": 2,
+                "content": f"<p style='font-size:15px'><b>{title}</b></p><p style='color:#555;font-size:14px'>{text}</p>",
+                "uids": json.loads(os.environ.get("WXPUSHER_UIDS", "[]")),
+            }
+            d = post_json("https://wxpusher.zjiecode.com/api/send/message", body)
+            print("alert wxpusher:", d.get("code"), d.get("msg"))
+            if str(d.get("code")) == "1000":
+                ok.append("wx")
+    except Exception as e:
+        print("alert wxpusher failed:", str(e)[:80])
+    try:
+        if os.environ.get("DING_WEBHOOK"):
+            body = {"msgtype": "markdown",
+                    "markdown": {"title": "cotopaxi监控告警",
+                                 "text": f"## ⚠️ {title}\n\n{text}"}}
+            d = post_json(os.environ["DING_WEBHOOK"], body)
+            print("alert dingtalk:", d.get("errcode"), d.get("errmsg"))
+            if str(d.get("errcode")) == "0":
+                ok.append("ding")
+    except Exception as e:
+        print("alert dingtalk failed:", str(e)[:80])
+    print(f"alert sent via {ok or '无可用渠道'}")
+    return ok
 
 def send_wecom(items, summary):
     text = summary + "\n" + "\n".join(f"[{it['platform']}] {it.get('title','')[:30]} {it.get('price','')}日元\n{it['h5']}" for it in items[:5])
