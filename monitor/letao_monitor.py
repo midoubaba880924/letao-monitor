@@ -23,9 +23,12 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/153.0.0.0 Safari/537.36 E
 PUSH_DEDUP_HOURS = 24   # 同一商品24小时内不重复推送
 ANOMALY_NEW_LIMIT = 15  # 单轮新增超过此数 → 判定状态异常，不推送
 # 只推包类（用户要求：衣服裤子不推）。命中任一关键词才推送
+# 日文包类词 + Cotopaxi 英文型号/包型词：Allpa/Batac/KAPAI 等标题常只写英文型号，不加会漏推核心背包
 BAG_KEYWORDS = ["バックパック", "リュック", "バッグ", "かばん", "カバン", "鞄",
                 "ボディバッグ", "ウエストポーチ", "ウェストバッグ", "ポーチ",
-                "ショルダー", "トート", "ダッフル", "ハンドバッグ", "ボストン", "ゲートル"]
+                "ショルダー", "トート", "ダッフル", "ハンドバッグ", "ボストン", "ゲートル",
+                "サコッシュ", "ヒップパック",
+                "allpa", "batac", "kapai", "hip pack", "backpack", "duffel", "tote", "saccoche"]
 
 ctx = ssl.create_default_context()
 ctx.check_hostname = False
@@ -182,14 +185,13 @@ def main():
 
     save_state(state)
     print(f"=== letao monitor {stamp} baseline={baseline} ===")
-    print("\n".join(report))
 
     if dedup_items:
         items = []
         for p, i in dedup_items[:30]:
             info = enrich(p, i, stamp)
-            # 品类过滤：只推包类，衣服/裤子/鞋帽等不推
-            if not any(k in info["title"] for k in BAG_KEYWORDS):
+            # 品类过滤：只推包类，衣服/裤子/鞋帽等不推（大小写不敏感，英文型号也能命中）
+            if not any(k.lower() in info["title"].lower() for k in BAG_KEYWORDS):
                 report.append(f"[FILTER] 跳过非包类: {info['title'][:30]}")
                 continue
             items.append(info)
@@ -215,6 +217,8 @@ def main():
         print("no new items")
         if os.path.exists(ALERT_JSON): os.remove(ALERT_JSON)
 
+    # 统一在末尾打印完整报告（含 FILTER/DEDUP），避免过滤记录不可见
+    print("\n".join(report))
     return 0
 
 if __name__ == "__main__":
