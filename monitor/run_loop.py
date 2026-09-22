@@ -6,7 +6,9 @@
 下一轮由 cron 触发的新 run 通过 concurrency 排队无缝接管。
 
 - TEST_ITEM 非空 = 单轮测试模式（手动 dispatch 用，不循环）
-- 任何单轮失败不终止循环；git 失败不阻塞（下轮重试）
+- 单轮监控/推送失败不终止循环（下轮重试）
+- git push 连续失败 >= 3 轮 → 主动退出（exit 1），释放 concurrency，
+  让 watchdog/cron 补触发新 run（自愈，避免 run 卡死时无人接管）
 """
 import os
 import subprocess
@@ -15,6 +17,7 @@ import time
 
 RUN_SECONDS = 359 * 60      # 每 run 最长约 5h59m，留 1 分钟余量，避免被 GitHub 6h 上限强杀
 ROUND_SECONDS = 120         # 每轮 2 分钟（及时性基准）
+MAX_PUSH_FAIL_STREAK = 3    # 连续 push 失败上限，超过则主动退出
 BASE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(BASE)
 HEARTBEAT = os.path.join(BASE, "heartbeat")
@@ -37,7 +40,11 @@ def git(cmd):
 
 
 def run_one_round():
-    """跑一轮 监控 + 推送 + 状态/心跳提交。单点失败不终止循环。"""
+    """跑一轮 监控 + 推送 + 状态/心跳提交。
+
+    返回 True = 本轮 git push 成功（含无需提交的情况）；False = push 失败。
+    监控/推送子进程失败不影响返回值（不阻塞循环）。
+    """
     for script in ("letao_monitor.py", "notify.py"):
         try:
             r = subprocess.run([sys.executable, os.path.join(BASE, script)],
@@ -55,17 +62,28 @@ def run_one_round():
             f.write(time.strftime("%Y-%m-%d %H:%M:%S\n"))
     except Exception:
         pass
-    # 提交状态 + 心跳 + 循环日志；失败不阻塞，下轮重试
+    # 提交状态 + 心跳 + 循环日志；push 失败计入连续失败数
+    push_ok = True
     try:
         git(["git", "add", "monitor/seen_items.json", "monitor/alerts.log",
              "monitor/heartbeat", "monitor/loop.log"])
         git(["git", "-c", "user.name=monitor-bot", "-c",
              "user.email=bot@users.noreply.github.com", "commit",
              "-m", "chore: update monitor state [skip ci]"])
-        git(["git", "pull", "--rebase", "origin", "main"])
-        git(["git", "push"])
+        r = git(["git", "pull", "--rebase", "origin", "main"])
+        if r.returncode != 0:
+            log(f"[warn] git pull --rebase 返回 {r.returncode}: {(r.stderr or '')[:100]}")
+            git(["git", "rebase", "--abort"])  # 恢复干净工作区，下轮重试
+            push_ok = False
+        else:
+            r = git(["git", "push"])
+            if r.returncode != 0:
+                log(f"[warn] git push 返回 {r.returncode}: {(r.stderr or '')[:100]}")
+                push_ok = False
     except Exception as e:
-        log(f"[warn] git 提交失败: {str(e)[:80]}")
+        log(f"[warn] git 提交异常: {str(e)[:80]}")
+        push_ok = False
+    return push_ok
 
 
 def main():
@@ -78,9 +96,14 @@ def main():
     start = time.time()
     log(f"loop start, target {RUN_SECONDS // 60} min, round {ROUND_SECONDS}s")
     round_no = 0
+    push_fail_streak = 0
     while time.time() - start < RUN_SECONDS:
-        run_one_round()
+        ok = run_one_round()
+        push_fail_streak = 0 if ok else push_fail_streak + 1
         round_no += 1
+        if push_fail_streak >= MAX_PUSH_FAIL_STREAK:
+            log(f"连续 {push_fail_streak} 轮 git push 失败，主动退出释放 concurrency（自愈）")
+            return 1
         target = start + round_no * ROUND_SECONDS
         remain = target - time.time()
         if remain > 0:
