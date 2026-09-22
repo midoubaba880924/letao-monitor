@@ -6,9 +6,9 @@
 下一轮由 cron 触发的新 run 通过 concurrency 排队无缝接管。
 
 - TEST_ITEM 非空 = 单轮测试模式（手动 dispatch 用，不循环）
-- 单轮监控/推送失败不终止循环（下轮重试）
-- git push 连续失败 >= 3 轮 → 主动退出（exit 1），释放 concurrency，
-  让 watchdog/cron 补触发新 run（自愈，避免 run 卡死时无人接管）
+- monitor 失败时跳过 notify（防止残留 alerts.json 被重复推送）
+- git push 连续失败 >= 3 轮 或 监控/推送连续失败 >= 3 轮
+  → 多渠道告警 + 主动退出（exit 1），释放 concurrency 让 watchdog 补触发重试（自愈）
 """
 import os
 import subprocess
@@ -18,6 +18,7 @@ import time
 RUN_SECONDS = 359 * 60      # 每 run 最长约 5h59m，留 1 分钟余量，避免被 GitHub 6h 上限强杀
 ROUND_SECONDS = 120         # 每轮 2 分钟（及时性基准）
 MAX_PUSH_FAIL_STREAK = 3    # 连续 push 失败上限，超过则主动退出
+MAX_WORK_FAIL_STREAK = 3    # 连续 监控/推送 失败上限，超过则告警 + 主动退出
 BASE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(BASE)
 HEARTBEAT = os.path.join(BASE, "heartbeat")
@@ -42,20 +43,41 @@ def git(cmd):
 def run_one_round():
     """跑一轮 监控 + 推送 + 状态/心跳提交。
 
-    返回 True = 本轮 git push 成功（含无需提交的情况）；False = push 失败。
-    监控/推送子进程失败不影响返回值（不阻塞循环）。
+    返回 (push_ok, work_ok)：
+      push_ok = False  → 本轮 git push 失败
+      work_ok = False  → 本轮监控或推送失败（monitor 失败时自动跳过 notify）
+    任何单点失败不抛异常（不阻塞循环）。
     """
-    for script in ("letao_monitor.py", "notify.py"):
+    work_ok = True
+    # 1) 监控（失败 → 跳过推送，避免残留 alerts.json 被重复推送）
+    try:
+        r = subprocess.run([sys.executable, os.path.join(BASE, "letao_monitor.py")],
+                           cwd=BASE, capture_output=True, text=True, timeout=150)
+        out = (r.stdout or "").strip() + (r.stderr or "").strip()
+        if out:
+            print(out, flush=True)
+        if r.returncode != 0:
+            work_ok = False
+            log(f"[warn] letao_monitor.py 返回码 {r.returncode}")
+    except Exception as e:
+        work_ok = False
+        log(f"[warn] letao_monitor.py 执行异常: {str(e)[:80]}")
+    # 2) 推送（仅当监控成功）
+    if work_ok:
         try:
-            r = subprocess.run([sys.executable, os.path.join(BASE, script)],
+            r = subprocess.run([sys.executable, os.path.join(BASE, "notify.py")],
                                cwd=BASE, capture_output=True, text=True, timeout=150)
             out = (r.stdout or "").strip() + (r.stderr or "").strip()
             if out:
                 print(out, flush=True)
             if r.returncode != 0:
-                log(f"[warn] {script} 返回码 {r.returncode}")
+                work_ok = False
+                log(f"[warn] notify.py 返回码 {r.returncode}")
         except Exception as e:
-            log(f"[warn] {script} 执行异常: {str(e)[:80]}")
+            work_ok = False
+            log(f"[warn] notify.py 执行异常: {str(e)[:80]}")
+    else:
+        print("[skip] monitor 失败，跳过 notify 防止重复推送", flush=True)
     # 心跳：每轮必变 → 强制 commit（供存活检测）
     try:
         with open(HEARTBEAT, "w", encoding="utf-8") as f:
@@ -83,7 +105,7 @@ def run_one_round():
     except Exception as e:
         log(f"[warn] git 提交异常: {str(e)[:80]}")
         push_ok = False
-    return push_ok
+    return push_ok, work_ok
 
 
 def main():
@@ -97,12 +119,24 @@ def main():
     log(f"loop start, target {RUN_SECONDS // 60} min, round {ROUND_SECONDS}s")
     round_no = 0
     push_fail_streak = 0
+    work_fail_streak = 0
     while time.time() - start < RUN_SECONDS:
-        ok = run_one_round()
-        push_fail_streak = 0 if ok else push_fail_streak + 1
+        ok_push, ok_work = run_one_round()
+        push_fail_streak = 0 if ok_push else push_fail_streak + 1
+        work_fail_streak = 0 if ok_work else work_fail_streak + 1
         round_no += 1
         if push_fail_streak >= MAX_PUSH_FAIL_STREAK:
             log(f"连续 {push_fail_streak} 轮 git push 失败，主动退出释放 concurrency（自愈）")
+            return 1
+        if work_fail_streak >= MAX_WORK_FAIL_STREAK:
+            try:
+                import notify as notifier
+                notifier.send_alert(
+                    "cotopaxi 监控运行异常",
+                    f"连续 {work_fail_streak} 轮监控/推送失败，系统将自动重启监控。\n\n若持续失败请检查 LETAO_TOKEN 与推送配置。")
+            except Exception as e:
+                log(f"[warn] 告警发送失败: {str(e)[:60]}")
+            log(f"连续 {work_fail_streak} 轮监控/推送失败，主动退出释放 concurrency（自愈）")
             return 1
         target = start + round_no * ROUND_SECONDS
         remain = target - time.time()
