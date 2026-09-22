@@ -116,6 +116,14 @@ def load_state():
         # 兼容v3旧结构
         if "platforms" not in s:
             s = {"platforms": {k: v for k, v in s.items() if isinstance(v, list)}, "pushed": {}}
+        # 兼容旧 pushed 结构（纯时间戳数字 → dict 记录 {t, price}，便于价格对比）
+        pushed = {}
+        for k, v in (s.get("pushed") or {}).items():
+            if isinstance(v, dict):
+                pushed[k] = v
+            else:
+                pushed[k] = {"t": float(v), "price": None}
+        s["pushed"] = pushed
         return s
     return {"platforms": {}, "pushed": {}}
 
@@ -177,37 +185,49 @@ def main():
             report.append(f"[OK] {p}: 在售 {len(ids)}，新增 {len(new)}")
             new_items += [(p, i) for i in new]
 
-    # 推送去重：24小时内推过的不再推
-    dedup_items = [(p, i) for p, i in new_items
-                   if now_ts - float(pushed.get(f"{p}:{i}", 0)) > PUSH_DEDUP_HOURS * 3600]
-    dropped = len(new_items) - len(dedup_items)
-    if dropped:
-        report.append(f"[DEDUP] 跳过 {dropped} 条24小时内已推送过的商品")
-
     save_state(state)
     print(f"=== letao monitor {stamp} baseline={baseline} ===")
 
-    if dedup_items:
+    if new_items:
         items = []
-        for p, i in dedup_items[:30]:
+        for p, i in new_items[:30]:
             info = enrich(p, i, stamp)
             # 品类过滤：只推包类，衣服/裤子/鞋帽等不推（大小写不敏感，英文型号也能命中）
             if not any(k.lower() in info["title"].lower() for k in BAG_KEYWORDS):
                 report.append(f"[FILTER] 跳过非包类: {info['title'][:30]}")
                 continue
+            key = f"{p}:{i}"
+            old_rec = pushed.get(key)
+            old_ts = old_rec["t"] if isinstance(old_rec, dict) else float(old_rec or 0)
+            old_price = old_rec.get("price") if isinstance(old_rec, dict) else None
+            new_price = info.get("price", "")
+            # 调价判定：历史有价格且与本轮不同 → 标记调价重推（用户认可的行为）
+            price_changed = bool(old_price and new_price and old_price != new_price)
+            # 推送条件：从未推过 / 距上次推送超过24h / 24h内但价格发生变化
+            if old_ts and (now_ts - old_ts) <= PUSH_DEDUP_HOURS * 3600 and not price_changed:
+                report.append(f"[DEDUP] 跳过 {i}（24h内已推送且价格未变）")
+                continue
+            info["push_type"] = "price" if price_changed else "new"
+            if price_changed:
+                info["old_price"] = old_price
             items.append(info)
-            pushed[f"{p}:{i}"] = now_ts
-            print(f"  + [{p}] {info['title'][:40]} | {info['price']}日元 约¥{info['cny']}")
+            pushed[key] = {"t": now_ts, "price": new_price}
+            tag = "（调价）" if price_changed else ""
+            print(f"  + [{p}] {info['title'][:40]} | {info['price']}日元 约¥{info['cny']}{tag}")
         # 清理7天前的推送记录
         for k in list(pushed):
-            if now_ts - float(pushed[k]) > 7 * 86400:
+            if now_ts - float(pushed[k]["t"]) > 7 * 86400:
                 del pushed[k]
+        # 关键：pushed（含价格历史）必须持久化，否则跨轮无法对比价格
+        save_state(state)
         payload = {"time": stamp, "items": items}
         with open(ALERT_JSON, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=1)
         lines = [f"{stamp} 上新 {len(items)} 条:"]
         for it in items:
-            lines.append(f"  [{it['platform']}] {it['title'][:40]} {it['price']}日元 {it['pc']}")
+            tag = "[调价]" if it.get("push_type") == "price" else "[新上架]"
+            price_info = f"{it.get('old_price','?')}→{it['price']}日元" if it.get("push_type") == "price" else f"{it['price']}日元"
+            lines.append(f"  [{it['platform']}]{tag} {it['title'][:40]} {price_info} {it['pc']}")
         with open(ALERT_LOG, "a", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n\n")
         print("\n".join(lines))
