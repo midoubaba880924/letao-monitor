@@ -18,10 +18,15 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main   # 强制最新 main，避免 run 创建时固定的旧快照（github.sha）导致重复推送
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Stagger 150s offset from workflow A
+        run: sleep 150   # 运行时错峰：GitHub cron 分钟错峰不可靠（实际曾同分钟撞车），改为 job 内延时
 
       - name: Run monitor
         env:
