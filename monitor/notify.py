@@ -2,23 +2,35 @@
 """读取 alerts.json，组装富卡片推送到所有已配置渠道（微信富卡片 + 钉钉/企微/Bark 文本）"""
 import os, sys, json, urllib.request, urllib.parse
 
+def type_tag(it):
+    """🆕 新上架 / 💰 调价"""
+    return "💰【调价】" if it.get("push_type") == "price" else "🆕【新上架】"
+
+
+def price_text(it):
+    p = f'{it["price"]} 日元' if it.get("price") else "见详情"
+    if it.get("push_type") == "price" and it.get("old_price"):
+        p += f'（原价 {it["old_price"]} 日元）'
+    return p
+
+
 def build_html(items):
     cards = []
     for it in items[:5]:
         img = f'<img src="{it["img"]}" width="180" style="border-radius:8px"/>' if it.get("img") else ""
-        price = f'{it["price"]} 日元' if it.get("price") else "见详情"
+        price = price_text(it)
         cny = f'（约 ¥{it["cny"]}）' if it.get("cny") else ""
         cond = f'🏷️ 成色：{it["cond"]}<br/>' if it.get("cond") else ""
         seen = f'⏱️ 上架捕获时间：<b>{it.get("first_seen","")}</b><br/>' if it.get("first_seen") else ""
         cards.append(f"""
 <div style="border:1px solid #eee;border-radius:10px;padding:12px;margin:10px 0;font-size:14px">
 {img}
-<p style="margin:8px 0"><b>🆕 {it.get("title","(标题解析失败)")}</b></p>
+<p style="margin:8px 0"><b>{type_tag(it)} {it.get("title","(标题解析失败)")}</b></p>
 <p style="margin:4px 0">💰 <b>{price}</b> {cny}<br/>{cond}{seen}🛒 平台：{it["platform"]}</p>
 <p style="margin:8px 0">
 📱 <a href="{it['h5']}">手机购买页</a> ｜ 💻 <a href="{it['pc']}">电脑页</a>
 </p></div>""")
-    footer = '<p style="color:#888;font-size:12px">GitHub 云端监控 · 每2.5分钟检查 Mercari · 仅推送监控启动后新上架商品</p>'
+    footer = '<p style="color:#888;font-size:12px">GitHub 云端监控 · 每2.5分钟检查 Mercari · 仅推送监控启动后新上架/调价商品</p>'
     return "".join(cards) + footer
 
 def post_json(url, body):
@@ -45,10 +57,10 @@ def send_dingtalk(items, summary):
     # 钉钉端：只展示商品图片+价格，不放购买链接（购买走微信富卡片）
     text = ""
     for it in items[:5]:
-        price = f'💰 **{it["price"]}日元**（约¥{it["cny"]}）' if it.get("price") else ""
+        price = f'💰 **{price_text(it)}**（约¥{it["cny"]}）' if it.get("price") else ""
         img = f"![商品图]({it['img']})\n\n" if it.get("img") else ""
         seen = f"⏱️ 上架捕获时间：**{it.get('first_seen','')}**\n\n" if it.get("first_seen") else ""
-        text += f"### 🆕 {it.get('title','')}\n\n{img}{price}\n\n{seen}🛒 {it['platform']}\n\n---\n\n"
+        text += f"### {type_tag(it)} {it.get('title','')}\n\n{img}{price}\n\n{seen}🛒 {it['platform']}\n\n---\n\n"
     body = {"msgtype": "markdown",
             "markdown": {"title": "cotopaxi上新", "text": f"## {summary}\n\n" + text}}
     d = post_json(os.environ["DING_WEBHOOK"], body)
