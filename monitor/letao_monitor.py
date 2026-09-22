@@ -8,6 +8,7 @@
 """
 import json, re, os, sys, time, urllib.request, ssl
 from datetime import datetime, timezone, timedelta
+import notify as notifier   # 多渠道告警（send_alert）
 
 TZ_BEIJING = timezone(timedelta(hours=8))  # 服务器是UTC，固定换算北京时间
 
@@ -143,6 +144,8 @@ def main():
 
     new_items, report = [], []
     test_item = os.environ.get("TEST_ITEM", "").strip()
+    err_streak = state.get("err_streak", 0)          # 抓取异常（ERR）连续轮数
+    enrich_fail = 0                                   # 本轮 enrich 失败的商品数
     if test_item:  # 手动测试模式
         m = re.search(r"goods_detail/([A-Za-z0-9-]+)/([A-Za-z0-9]+)", test_item)
         if not m:
@@ -154,26 +157,24 @@ def main():
             try:
                 ids = parse_search(p)
             except Exception as e:
+                err_streak += 1
                 report.append(f"[ERR] {p}: {e}"); continue
             if ids is None or len(ids) == 0:
-                # 风控页/异常页：绝不清空状态；连续被拦则发钉钉告警（6h节流）
+                # 风控页/异常页：绝不清空状态；连续被拦则多渠道告警（6h节流）
                 state["suspect_streak"] = state.get("suspect_streak", 0) + 1
                 report.append(f"[SUSPECT] {p}: 返回异常(空/验证码)，保持原状态不推送（连续第{state['suspect_streak']}轮）")
                 if state["suspect_streak"] >= 2 and now_ts - float(state.get("last_risk_warn", 0)) > 6 * 3600:
-                    try:
-                        warn = {"msgtype": "markdown", "markdown": {
-                            "title": "cotopaxi监控告警",
-                            "text": f"## ⚠️ cotopaxi 监控被风控拦截\n\n连续 {state['suspect_streak']} 轮抓取被乐淘验证码拦截，期间上新可能漏报。\n\n系统每5分钟自动重试，恢复后自动继续。"}}
-                        req = urllib.request.Request(os.environ.get("DING_WEBHOOK", ""),
-                                                     data=json.dumps(warn).encode(),
-                                                     headers={"Content-Type": "application/json"})
-                        urllib.request.urlopen(req, timeout=15)
+                    ok_chan = notifier.send_alert(
+                        "cotopaxi 监控被风控拦截",
+                        f"连续 {state['suspect_streak']} 轮抓取被乐淘验证码拦截，期间上新可能漏报。\n\n系统每5分钟自动重试，恢复后自动继续。")
+                    if ok_chan:
                         state["last_risk_warn"] = now_ts
-                        report.append("[WARN] 已发送风控告警到钉钉")
-                    except Exception as e:
-                        report.append(f"[WARN] 告警发送失败: {str(e)[:50]}")
+                        report.append(f"[WARN] 已发送风控告警（{'/'.join(ok_chan)}）")
+                    else:
+                        report.append("[WARN] 风控告警发送失败（无可用渠道）")
                 continue
             state["suspect_streak"] = 0  # 成功一轮即清零
+            err_streak = 0               # 抓取成功即清零
             old = set(plat_state.get(p, []))
             new = [i for i in ids if i not in old and i not in pushed]
             if not baseline and len(new) > ANOMALY_NEW_LIMIT:
@@ -184,6 +185,18 @@ def main():
             plat_state[p] = ids
             report.append(f"[OK] {p}: 在售 {len(ids)}，新增 {len(new)}")
             new_items += [(p, i) for i in new]
+
+    # 抓取连续失败 >= 3 轮 → 多渠道告警 + 非 0 退出（让 run_loop/watchdog 感知并自动重试）
+    state["err_streak"] = err_streak
+    if err_streak >= 3:
+        if now_ts - float(state.get("last_alert_warn", 0)) > 6 * 3600:
+            notifier.send_alert(
+                "cotopaxi 监控抓取持续失败",
+                f"连续 {err_streak} 轮抓取乐淘失败（token 失效/网络异常/页面改版），期间上新无法监控。\n\n系统会自动重试，若持续请检查 LETAO_TOKEN。")
+            state["last_alert_warn"] = now_ts
+        save_state(state)
+        print("\n".join(report))
+        return 1
 
     save_state(state)
     print(f"=== letao monitor {stamp} baseline={baseline} ===")
@@ -197,9 +210,12 @@ def main():
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
             infos = list(ex.map(lambda t: (t, enrich(*t, stamp)), cands))
         for (p, i), info in infos:
+            if info.get("err"):
+                enrich_fail += 1
             # 品类过滤：只推包类，衣服/裤子/鞋帽等不推（大小写不敏感，英文型号也能命中）
             if not any(k.lower() in info["title"].lower() for k in BAG_KEYWORDS):
-                report.append(f"[FILTER] 跳过非包类: {info['title'][:30]}")
+                note = f" [enrich失败: {info['err'][:40]}]" if info.get("err") else ""
+                report.append(f"[FILTER] 跳过非包类: {info['title'][:30]}{note}")
                 continue
             key = f"{p}:{i}"
             old_rec = pushed.get(key)
@@ -223,6 +239,13 @@ def main():
         for k in list(pushed):
             if now_ts - float(pushed[k]["t"]) > 7 * 86400:
                 del pushed[k]
+        # enrich 连续失败 >= 3 轮 → 多渠道告警（详情解析失败会因标题占位被 FILTER，造成漏推）
+        state["enrich_fail_streak"] = (state.get("enrich_fail_streak", 0) + 1) if enrich_fail else 0
+        if state["enrich_fail_streak"] >= 3 and now_ts - float(state.get("last_alert_warn", 0)) > 6 * 3600:
+            notifier.send_alert(
+                "cotopaxi 商品详情解析持续失败",
+                f"连续 {state['enrich_fail_streak']} 轮有商品详情解析失败，可能导致包类新品被误过滤漏推。\n\n请检查 nuuxt_extract.js 或乐淘页面结构。")
+            state["last_alert_warn"] = now_ts
         # 关键：pushed（含价格历史）必须持久化，否则跨轮无法对比价格
         save_state(state)
         payload = {"time": stamp, "items": items}
