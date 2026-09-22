@@ -1,16 +1,10 @@
 name: letao-monitor-b
 
 on:
-  schedule:
-    - cron: "2-59/5 * * * *"   # 错峰轮：在 2/7/12/17... 分触发，与 A 组合成每2.5分钟一轮
-  workflow_dispatch:
+  workflow_dispatch:   # 仅手动触发：单轮测试工具（长跑模式见 monitor.yml）
 
 permissions:
   contents: write
-
-concurrency:
-  group: letao-monitor
-  cancel-in-progress: false   # 撞车时排队串行，不丢轮次
 
 jobs:
   monitor:
@@ -25,10 +19,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Stagger 150s offset from workflow A
-        run: sleep 150   # 运行时错峰：GitHub cron 分钟错峰不可靠（实际曾同分钟撞车），改为 job 内延时
-
-      - name: Run monitor
+      - name: Run monitor (single round)
         env:
           LETAO_TOKEN: ${{ secrets.LETAO_TOKEN }}
           STATE_DIR: ${{ github.workspace }}/monitor
