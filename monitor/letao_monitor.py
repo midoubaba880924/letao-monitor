@@ -189,9 +189,14 @@ def main():
     print(f"=== letao monitor {stamp} baseline={baseline} ===")
 
     if new_items:
+        import concurrent.futures
         items = []
-        for p, i in new_items[:30]:
-            info = enrich(p, i, stamp)
+        cands = new_items[:30]
+        # 并发 enrich（4 线程）：及时性第一。价格对比/白名单判断都需要详情，
+        # 串行会拖慢整轮（最坏逼近超时），并发按输入顺序收集结果，行为不变但更快
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+            infos = list(ex.map(lambda t: (t, enrich(*t, stamp)), cands))
+        for (p, i), info in infos:
             # 品类过滤：只推包类，衣服/裤子/鞋帽等不推（大小写不敏感，英文型号也能命中）
             if not any(k.lower() in info["title"].lower() for k in BAG_KEYWORDS):
                 report.append(f"[FILTER] 跳过非包类: {info['title'][:30]}")
