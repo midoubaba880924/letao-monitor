@@ -2,7 +2,9 @@ name: letao-monitor
 
 on:
   schedule:
-    - cron: "*/5 * * * *"    # 每5分钟一轮（公开仓库免费不限量）
+    - cron: "30 22 * * *"   # UTC 22:30 = 北京 6:30（凌晨停跑窗口结束）
+    - cron: "30 4 * * *"    # UTC 4:30 = 北京 12:30（第二段接力）
+    - cron: "30 10 * * *"   # UTC 10:30 = 北京 18:30（第三段接力）
   workflow_dispatch:
     inputs:
       test_item:
@@ -15,42 +17,29 @@ permissions:
 
 concurrency:
   group: letao-monitor
-  cancel-in-progress: false   # 撞车时排队串行，不丢轮次不重复推送
+  cancel-in-progress: false   # 撞车时排队串行：cron 新 run 排队等待旧 run 结束，无缝接力
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 360      # job 上限 6h；脚本 5h59m 主动退出，避免被强杀
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main   # 强制最新 main，避免 run 创建时固定的旧快照（github.sha）导致重复推送
+          ref: main   # 强制最新 main（含上一段 run 刚 push 的状态），避免旧快照重复推送
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Run monitor
+      - name: Run long-lived monitor loop (2-min rounds)
         env:
           LETAO_TOKEN: ${{ secrets.LETAO_TOKEN }}
           STATE_DIR: ${{ github.workspace }}/monitor
           TEST_ITEM: ${{ github.event.inputs.test_item }}
-        run: python monitor/letao_monitor.py
-
-      - name: Send notification
-        env:
           WXPUSHER_TOKEN: ${{ secrets.WXPUSHER_TOKEN }}
           WXPUSHER_UIDS: ${{ secrets.WXPUSHER_UIDS }}
           BARK_URL: ${{ secrets.BARK_URL }}
           WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
           DING_WEBHOOK: ${{ secrets.DING_WEBHOOK }}
-        run: python monitor/notify.py monitor/alerts.json
-
-      - name: Commit state
-        run: |
-          git config user.name "monitor-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git pull --rebase origin main || true
-          git add monitor/seen_items.json monitor/alerts.log || true
-          git diff --cached --quiet || git commit -m "chore: update monitor state [skip ci]"
-          git push || true   # 撞车失败不阻塞，下轮会重写
+        run: python monitor/run_loop.py
