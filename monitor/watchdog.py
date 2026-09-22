@@ -45,9 +45,10 @@ def main():
         return 1
     api = f"https://api.github.com/repos/{owner}/{repo}"
     try:
-        runs = gh(f"{api}/actions/runs?workflow={WORKFLOW_FILE}&per_page=3", token)[
-            "workflow_runs"
-        ]
+        # 注意：GitHub 的 workflow 查询参数在此仓库无效（返回全部 runs），
+        # 必须按 name 过滤，否则会取到 watchdog 自身的 run，导致永远判定"正常"
+        runs = gh(f"{api}/actions/runs?per_page=20", token)["workflow_runs"]
+        runs = [r for r in runs if r.get("name") == "letao-monitor"]
     except Exception as e:
         print(f"[warn] 查询主 run 失败: {str(e)[:80]}")
         return 1
