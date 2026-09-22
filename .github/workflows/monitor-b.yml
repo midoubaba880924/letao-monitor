@@ -33,12 +33,5 @@ jobs:
           WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
           DING_WEBHOOK: ${{ secrets.DING_WEBHOOK }}
         run: python monitor/notify.py monitor/alerts.json
-
-      - name: Commit state
-        run: |
-          git config user.name "monitor-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git pull --rebase origin main || true
-          git add monitor/seen_items.json monitor/alerts.log || true
-          git diff --cached --quiet || git commit -m "chore: update monitor state [skip ci]"
-          git push || true   # 撞车失败不阻塞，下轮会重写
+        # 注意：monitor-b 不 commit/push 状态文件——避免与主 run 并发修改 seen_items.json
+        # 造成主 run 下一轮 git pull --rebase 冲突(128)。测试轮状态由主 run 负责维护。
