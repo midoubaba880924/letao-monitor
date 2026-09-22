@@ -15,21 +15,23 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: reproduce pull --rebase 128
+      - name: reproduce pull --rebase fork scenario
         run: |
           git config user.name "diag-bot"
           git config user.email "bot@users.noreply.github.com"
-          echo "diag $(date -u +%H:%M:%S)" >> monitor/heartbeat
+          echo "diag2 $(date -u +%H:%M:%S)" >> monitor/heartbeat
           git add monitor/heartbeat
-          git commit -m "diag: reproduce 128 [skip ci]" || echo "commit failed rc=$?"
-          echo "=== git status before pull ==="
+          git commit -m "diag2: local commit [skip ci]" || echo "commit failed rc=$?"
+          echo "=== before pull: log ==="
+          git log --oneline -2
+          echo "=== status before pull ==="
           git status --short
-          echo "=== git log before pull ==="
-          git log --oneline -3
+          echo "=== waiting 45s for external trigger commit ==="
+          sleep 45
           echo "=== pull --rebase (capture all) ==="
           git pull --rebase origin main
           echo "pull exit=$?"
-          echo "=== git status after pull ==="
+          echo "=== status after pull ==="
           git status --short
-          echo "=== git log after pull ==="
-          git log --oneline -5
+          echo "=== log after pull ==="
+          git log --oneline -4
