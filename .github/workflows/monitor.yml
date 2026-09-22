@@ -23,6 +23,8 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main   # 强制最新 main，避免 run 创建时固定的旧快照（github.sha）导致重复推送
 
       - uses: actions/setup-python@v5
         with:
