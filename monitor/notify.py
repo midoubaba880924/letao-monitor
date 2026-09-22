@@ -120,7 +120,7 @@ CHANNELS = [
 ]
 
 if __name__ == "__main__":
-    aj = sys.argv[1] if len(sys.argv) > 1 else "monitor/alerts.json"
+    aj = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "alerts.json")
     if not os.path.exists(aj):
         print("no alerts.json, nothing to push"); sys.exit(0)
     data = json.load(open(aj, encoding="utf-8"))
