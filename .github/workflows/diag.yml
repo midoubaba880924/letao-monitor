@@ -1,0 +1,35 @@
+name: letao-diag
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: reproduce pull --rebase 128
+        run: |
+          git config user.name "diag-bot"
+          git config user.email "bot@users.noreply.github.com"
+          echo "diag $(date -u +%H:%M:%S)" >> monitor/heartbeat
+          git add monitor/heartbeat
+          git commit -m "diag: reproduce 128 [skip ci]" || echo "commit failed rc=$?"
+          echo "=== git status before pull ==="
+          git status --short
+          echo "=== git log before pull ==="
+          git log --oneline -3
+          echo "=== pull --rebase (capture all) ==="
+          git pull --rebase origin main
+          echo "pull exit=$?"
+          echo "=== git status after pull ==="
+          git status --short
+          echo "=== git log after pull ==="
+          git log --oneline -5
