@@ -2,6 +2,11 @@ name: letao-monitor-b
 
 on:
   workflow_dispatch:   # 仅手动触发：单轮测试工具（长跑模式见 monitor.yml）
+    inputs:
+      test_item:
+        description: "测试商品URL(goods_detail链接)，留空=正常抓取当前上新"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -23,6 +28,7 @@ jobs:
         env:
           LETAO_TOKEN: ${{ secrets.LETAO_TOKEN }}
           STATE_DIR: ${{ github.workspace }}/monitor
+          TEST_ITEM: ${{ github.event.inputs.test_item }}
         run: python monitor/letao_monitor.py
 
       - name: Send notification
