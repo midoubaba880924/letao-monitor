@@ -28,7 +28,8 @@ BAG_KEYWORDS = ["バックパック", "リュック", "バッグ", "かばん", 
                 "ボディバッグ", "ウエストポーチ", "ウェストバッグ", "ポーチ",
                 "ショルダー", "トート", "ダッフル", "ハンドバッグ", "ボストン", "ゲートル",
                 "サコッシュ", "ヒップパック",
-                "allpa", "batac", "kapai", "hip pack", "backpack", "duffel", "tote", "saccoche"]
+                "allpa", "batac", "kapai", "hip pack", "backpack", "duffel", "tote", "saccoche",
+                "elqui", "luzon", "sling", "waist pack", "accessory bag"]
 
 ctx = ssl.create_default_context()
 ctx.check_hostname = False
