@@ -3,6 +3,7 @@ name: letao-monitor-watchdog
 on:
   schedule:
     - cron: "*/5 * * * *"   # 每5分钟检查主 run 存活（轻量，调度延迟不影响主链路）
+  workflow_dispatch:        # 手动触发（故障排查/立即检查时用）
 
 permissions:
   contents: read
